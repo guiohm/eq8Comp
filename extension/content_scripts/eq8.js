@@ -42,7 +42,7 @@
     }
 
     createPipelineForElement (element) {
-      const { filters, preampMultiplier } = this.state;
+      const { filters, preampGain } = this.state;
       const context = new this.WebAudioContext();
       const source = context.createMediaElementSource(element);
       const elFilters = [];
@@ -56,7 +56,7 @@
         elFilters.push({ filter: f, enabled, id });
       });
       const preamp = context.createGain();
-      preamp.gain.value = preampMultiplier;
+      preamp.gain.value = this.multiplierFromGain(preampGain);
       const compressor = context.createDynamicsCompressor();
       const postamp = context.createGain();
       postamp.gain.value = this.multiplierFromGain(this.state.compressor.gain);
@@ -77,7 +77,7 @@
           filter.gain.value = f.gain;
           entry.enabled = f.enabled;
         });
-        preamp.gain.value = this.state.preampMultiplier;
+        preamp.gain.value = this.multiplierFromGain(this.state.preampGain);
         compressor.threshold.setValueAtTime(this.state.compressor.threshold, context.currentTime);
         compressor.ratio.setValueAtTime(this.state.compressor.ratio, context.currentTime);
         compressor.attack.setValueAtTime(this.state.compressor.attack, context.currentTime);

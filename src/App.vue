@@ -128,7 +128,7 @@
         <div class="col align-center my2">
           <div class="dial-label">Preamp</div>
           <div
-            @click="!eqEnabled ? $noOp : preampDialHandler(1.0)"
+            @click="!eqEnabled ? $noOp : preampDialHandler(0.0)"
             class="zeroer"
             :class="{disabled: !eqEnabled}"
           >
@@ -136,18 +136,18 @@
           </div>
           <Dial
             :size="dialSize"
-            :value="preampMultiplier"
-            :min="0"
-            :max="2"
+            :value="preampGain"
+            :min="-20"
+            :max="20"
             :disabled="!eqEnabled"
             :wheel-sensitivity="settings.sensitivity"
             @change="preampDialHandler"
           />
           <NumberEditLabel
-            :value="preampMultiplier"
-            :label="toFixed(preampMultiplier)"
-            :min="0"
-            :max="2"
+            :value="preampGain"
+            :label="toFixed(preampGain) + ' dB'"
+            :min="-20"
+            :max="20"
             :disabled="!eqEnabled"
             @change="preampDialHandler"
           />
@@ -325,7 +325,7 @@ export default {
       dialSize: 55,
       filterOptions: opts,
       freqStart: 10.0,
-      preampMultiplier: 1.0,
+      preampGain: 1.0,
       selectedFilter: null,
       frAudioContext: new WebAudioContext(),
       compressor: {},
@@ -353,12 +353,12 @@ export default {
       .then(() => this.selectedFilter = this.frFilters[0]);
   },
   methods: {
-    stateUpdateHandler ({ compressor, filters, eqEnabled, preampMultiplier, settings, presets }) {
+    stateUpdateHandler ({ compressor, filters, eqEnabled, preampGain, settings, presets }) {
       this.compressor = compressor;
       this.compEnabled = compressor.enabled;
       this.frFilters = this.$arrayCopy(filters);
       this.eqEnabled = eqEnabled;
-      this.preampMultiplier = preampMultiplier;
+      this.preampGain = preampGain;
       this.settings = this.$arrayCopy(settings);
       this.presets = presets;
       if (this.selectedFilter) {
@@ -371,7 +371,7 @@ export default {
       port.postMessage({ type: 'SET::FILTER', filter: newFilter });
     },
     preampDialHandler (value) {
-      port.postMessage({ type: 'SET::PREAMP', preampMultiplier: value });
+      port.postMessage({ type: 'SET::PREAMP', preampGain: value });
     },
     qDialHandler (value) {
       port.postMessage({ type: 'SET::FILTER', filter: Object.assign(this.selectedFilter, { q: value }) });
@@ -463,7 +463,7 @@ export default {
         image: this.presetImage,
         compressor: this.compressor,
         filters: this.frFilters,
-        preampMultiplier: this.preampMultiplier
+        preampGain: this.preampGain
       };
       port.postMessage({ type: 'SAVE::PRESET', preset });
       this.savePresetOpen = false;

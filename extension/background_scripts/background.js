@@ -89,7 +89,7 @@ const state = {
   eqEnabled: true,
   compressor: copyHack(defaultCompressor),
   filters: copyHack(defaultFilters),
-  preampMultiplier: 1.0,
+  preampGain: 0.0,
   settings: {
     sensitivity: 1024
   },
@@ -101,7 +101,7 @@ const state = {
       icon: 'audiotrack',
       compressor: copyHack(defaultCompressor),
       filters: copyHack(defaultFilters),
-      preampMultiplier: 1.0
+      preampGain: 0.0
     }
   }
 };
@@ -195,7 +195,7 @@ $storage.get([STORAGE_KEY])
           broadcastState();
           break;
         case 'SET::PREAMP':
-          state.preampMultiplier = msg.preampMultiplier;
+          state.preampGain = msg.preampGain;
           broadcastState();
           break;
         case 'SET::SETTINGS':
@@ -204,7 +204,7 @@ $storage.get([STORAGE_KEY])
           break;
         case 'RESET::FILTERS':
           state.filters = copyHack(defaultFilters);
-          state.preampMultiplier = 1.0;
+          state.preampGain = 0.0;
           broadcastState();
           break;
         case 'SAVE::PRESET':
@@ -220,7 +220,7 @@ $storage.get([STORAGE_KEY])
           const pre = state.presets[msg.id];
           state.compressor = copyHack(pre.compressor);
           state.filters = copyHack(pre.filters);
-          state.preampMultiplier = pre.preampMultiplier;
+          state.preampGain = pre.preampGain;
           broadcastState();
           break;
         default:
