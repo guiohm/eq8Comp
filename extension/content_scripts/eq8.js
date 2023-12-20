@@ -58,6 +58,7 @@
       const preamp = context.createGain();
       preamp.gain.value = this.multiplierFromGain(preampGain);
       const compressor = context.createDynamicsCompressor();
+      this.updateCompressorNode(context, compressor);
       const postamp = context.createGain();
       postamp.gain.value = this.multiplierFromGain(this.state.compressor.gain);
       const pipeline = { context, source, filters: elFilters, preamp, compressor, postamp, element };
@@ -78,11 +79,7 @@
           entry.enabled = f.enabled;
         });
         preamp.gain.value = this.multiplierFromGain(this.state.preampGain);
-        compressor.threshold.setValueAtTime(this.state.compressor.threshold, context.currentTime);
-        compressor.ratio.setValueAtTime(this.state.compressor.ratio, context.currentTime);
-        compressor.attack.setValueAtTime(this.state.compressor.attack, context.currentTime);
-        compressor.release.setValueAtTime(this.state.compressor.release, context.currentTime);
-        compressor.knee.setValueAtTime(this.state.compressor.knee, context.currentTime);
+        this.updateCompressorNode(context, compressor);
         postamp.gain.value = this.multiplierFromGain(this.state.compressor.gain);
         source.disconnect();
         preamp.disconnect();
@@ -91,6 +88,14 @@
         postamp.disconnect();
         this.arrangeFilters(pipeline);
       });
+    }
+
+    updateCompressorNode (context, compNode) {
+      compNode.threshold.setValueAtTime(this.state.compressor.threshold, context.currentTime);
+      compNode.ratio.setValueAtTime(this.state.compressor.ratio, context.currentTime);
+      compNode.attack.setValueAtTime(this.state.compressor.attack, context.currentTime);
+      compNode.release.setValueAtTime(this.state.compressor.release, context.currentTime);
+      compNode.knee.setValueAtTime(this.state.compressor.knee, context.currentTime);
     }
 
     onMessage (msg) {
