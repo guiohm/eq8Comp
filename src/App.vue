@@ -156,7 +156,11 @@
     </div>
     <div class="row justify-right">
       <div class="col align-center">
-        <div id="compressor-visualization"></div>
+        <!-- <div id="compressor-visualization"></div> -->
+        <div class="meter">
+          <canvas class="canvas-grid"></canvas>
+          <div class="bar"></div>
+        </div>
       </div>
       <div class="col">
         <div class="section grow row" style="margin-right: 6px;">
@@ -290,6 +294,7 @@ import NumberEditLabel from './components/NumberEditLabel';
 import PresetsModal from './components/PresetsModal';
 import SavePresetModal from './components/SavePresetModal';
 import SettingsModal from './components/SettingsModal';
+import colors from './styles/_colors.scss';
 
 const WebAudioContext = (window.AudioContext || window.webkitAudioContext);
 
@@ -356,6 +361,7 @@ export default {
     stateUpdateHandler ({ compressor, filters, eqEnabled, preampGain, settings, presets }) {
       this.compressor = compressor;
       this.compEnabled = compressor.enabled;
+      if (this.compEnabled) port.postMessage({ type: 'GET::GAIN_REDUCTION' }); // restarts visualization
       this.frFilters = this.$arrayCopy(filters);
       this.eqEnabled = eqEnabled;
       this.preampGain = preampGain;
@@ -442,15 +448,37 @@ export default {
     },
     conpressorVisualizer () {
       compressorVisualizerStarted = true;
-      this.outputBar = document.createElement('div');
-      this.outputBar.classList.add('output');
-      document.getElementById('compressor-visualization').appendChild(this.outputBar);
+      const meter = document.querySelector('.meter');
+      this.meterBar = document.querySelector('.bar');
+      const canvas = document.querySelector('.canvas-grid');
+      const ctx = canvas.getContext('2d');
 
-      console.log('eq8popup compressorVisualizer started');
+      canvas.width = meter.offsetWidth;
+      canvas.height = meter.offsetHeight;
+
+      const dbScale = -25;
+      ctx.font = '8px sans-serif';
+      for (let db = dbScale + 5; db < 0; db += 5) {
+        const dbToY = (canvas.height / dbScale) * db;
+        const y = Math.floor(dbToY) + 0.5; // adjustment for crisp lines
+        console.log('y:', y);
+        ctx.strokeStyle = colors.graphLine;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.stroke();
+        ctx.strokeStyle = colors.graphText;
+        ctx.strokeText(db.toFixed(0), 4.5, y + 0.5);
+      }
+
       this.updateReductionLevel();
     },
     updateReductionLevel () {
-      this.outputBar.style.height = `${gainReductionLevel * -6}px`;
+      if (!this.compEnabled) {
+        this.meterBar.style.height = '0px';
+        return;
+      }
+      this.meterBar.style.height = `${gainReductionLevel * -6}px`;
       port.postMessage({ type: 'GET::GAIN_REDUCTION' });
     },
     handleReset () {
@@ -730,4 +758,33 @@ $_spacer_dirs: top, right, bottom, left;
   background-color: #9f311b;
 }
 
+.meter {
+  position: relative;
+  width: 30px;
+  height: 128px;
+  background-color: $fr-background;
+  border: 1px solid black;
+  border-radius: 3px;
+  margin: auto 2px;
+  position: relative;
+  display: block;
+  overflow: hidden;
+}
+
+.bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  background-color: #9f311b;
+}
+
+.canvas-grid {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  // opacity: 0.5;
+  border-radius: 5px;
+}
 </style>

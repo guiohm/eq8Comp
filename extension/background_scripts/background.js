@@ -167,7 +167,6 @@ $storage.get([STORAGE_KEY])
           port.postMessage({ type: 'SET::STATE', state });
           break;
         case 'GET::GAIN_REDUCTION':
-          // broadcastMessage({ type: 'GET::GAIN_REDUCTION' });
           contentScripts.forEach(p => p.postMessage({ type: 'GET::GAIN_REDUCTION' }));
           return;
         case 'SET::FILTER':
