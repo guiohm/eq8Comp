@@ -1,6 +1,16 @@
 const $storage = browser.storage.local;
 const contentScripts = [];
 
+const defaultCompressor = {
+  enabled: true,
+  threshold: -40.0,
+  ratio: 8.0,
+  attack: 0.003,
+  release: 0.15,
+  knee: 30,
+  gain: 0.0
+};
+
 const defaultFilters = [
   {
     id: 1,
@@ -76,7 +86,8 @@ const uuid = a => a
   : ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, uuid);
 
 const state = {
-  enabled: true,
+  eqEnabled: true,
+  compressor: copyHack(defaultCompressor),
   filters: copyHack(defaultFilters),
   preampMultiplier: 1.0,
   settings: {
@@ -88,6 +99,7 @@ const state = {
       locked: true,
       image: null,
       icon: 'audiotrack',
+      compressor: copyHack(defaultCompressor),
       filters: copyHack(defaultFilters),
       preampMultiplier: 1.0
     }
@@ -100,6 +112,8 @@ const { icons, iconsSelected } = iconSizes.reduce((a, c) => {
   a.iconsSelected[String(c)] = `icons/icon-${c}-selected.png`;
   return a;
 }, { icons: {}, iconsSelected: {} });
+
+const updateIcon = () => browser.browserAction.setIcon({ path: state.compressor.enabled || state.eqEnabled ? iconsSelected : icons });
 
 const STORAGE_KEY = '::state';
 
@@ -134,10 +148,10 @@ $storage.get([STORAGE_KEY])
   .then(g => g[STORAGE_KEY] ? Promise.resolve(Object.assign(state, g[STORAGE_KEY])) : $storage.set({ [STORAGE_KEY]: state }))
   .catch(() => $storage.set({ [STORAGE_KEY]: state }))
   .finally(() => {
-    browser.browserAction.setIcon({ path: state.enabled ? iconsSelected : icons });
+    updateIcon();
 
     browser.runtime.onConnect.addListener(port => {
-      if (port.name === 'eq8') {
+      if (port.name === 'eq8comp') {
         contentScripts.push(port);
         port.onDisconnect.addListener(() => {
           const ix = contentScripts.indexOf(port);
@@ -152,6 +166,10 @@ $storage.get([STORAGE_KEY])
         case 'GET::STATE':
           port.postMessage({ type: 'SET::STATE', state });
           break;
+        case 'GET::GAIN_REDUCTION':
+          // broadcastMessage({ type: 'GET::GAIN_REDUCTION' });
+          contentScripts.forEach(p => p.postMessage({ type: 'GET::GAIN_REDUCTION' }));
+          return;
         case 'SET::FILTER':
           const id = msg.filter.id;
           const f = state.filters.find(f => f.id === id);
@@ -162,9 +180,18 @@ $storage.get([STORAGE_KEY])
           f.enabled = msg.filter.enabled;
           broadcastState();
           break;
-        case 'SET::ENABLED':
-          state.enabled = msg.enabled;
-          browser.browserAction.setIcon({ path: state.enabled ? iconsSelected : icons });
+        case 'SET::COMPRESSOR':
+          state.compressor = msg.compressor;
+          broadcastState();
+          break;
+        case 'SET::COMP_ENABLED':
+          state.compressor.enabled = msg.enabled;
+          updateIcon();
+          broadcastState();
+          break;
+        case 'SET::EQ_ENABLED':
+          state.eqEnabled = msg.enabled;
+          updateIcon();
           broadcastState();
           break;
         case 'SET::PREAMP':
@@ -191,6 +218,7 @@ $storage.get([STORAGE_KEY])
           break;
         case 'LOAD::PRESET':
           const pre = state.presets[msg.id];
+          state.compressor = copyHack(pre.compressor);
           state.filters = copyHack(pre.filters);
           state.preampMultiplier = pre.preampMultiplier;
           broadcastState();
@@ -202,5 +230,11 @@ $storage.get([STORAGE_KEY])
       });
     });
 
-    browser.runtime.onMessage.addListener(msg => msg.type === 'GET::STATE' ? Promise.resolve(state) : Promise.resolve());
+    browser.runtime.onMessage.addListener(msg => {
+      if (msg.type === 'GET::STATE') {
+        return Promise.resolve(state);
+      }
+      if (msg.type === 'SET::GAIN_REDUCTION') contentScripts.forEach(p => p.postMessage({ type: 'SET::GAIN_REDUCTION', value: msg.value }));
+      return Promise.resolve();
+    });
   });

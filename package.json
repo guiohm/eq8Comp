@@ -1,15 +1,13 @@
 {
-  "name": "eq8",
+  "name": "eq8comp",
   "version": "0.0.3",
-  "author": "Tyler Snedigar <snedigart@gmail.com>",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pulse0ne/eq8"
+    "url": "https://github.com/guiohm/eq8Comp"
   },
   "bugs": {
-    "url": "https://github.com/pulse0ne/eq8/issues",
-    "email": "snedigart@gmail.com"
+    "url": "https://github.com/guiohm/eq8Comp/issues"
   },
   "scripts": {
     "build": "NODE_OPTIONS=--openssl-legacy-provider vue-cli-service build",

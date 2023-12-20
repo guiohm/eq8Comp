@@ -1,7 +1,7 @@
 <template>
   <div id="app">
     <div class="row">
-      <div class="col align-center section dail-section">
+      <div class="col align-center section">
         <div class="col align-center dial-wrapper">
           <div class="dial-label">Freq</div>
           <Dial
@@ -154,6 +154,127 @@
         </div>
       </div>
     </div>
+    <div class="row justify-right">
+      <div class="col align-center">
+        <div id="compressor-visualization"></div>
+      </div>
+      <div class="col">
+        <div class="section grow row" style="margin-right: 6px;">
+          <div class="col align-center dial-wrapper dial-section">
+            <div class="dial-label mt2">Threshold</div>
+            <Dial
+              :size="dialSize"
+              :value="compressor.threshold"
+              :min="-100"
+              :max="0"
+              :disabled="!compEnabled"
+              :wheel-sensitivity="settings.sensitivity"
+              @change="thresholdDialHandler"
+            />
+            <NumberEditLabel
+              :value="compressor.threshold"
+              :label="toFixed(compressor.threshold || 0) + ' dB'"
+              :min="-100"
+              :max="0"
+              :disabled="!compEnabled"
+              @change="thresholdDialHandler"
+            />
+          </div>
+          <div class="col align-center dial-wrapper dial-section">
+            <div class="dial-label mt2">Ratio</div>
+            <Dial
+              :size="dialSize"
+              :value="compressor.ratio"
+              :min="1"
+              :max="20"
+              :disabled="!compEnabled"
+              :wheel-sensitivity="settings.sensitivity"
+              @change="ratioDialHandler"
+            />
+            <NumberEditLabel
+              :value="compressor.ratio"
+              :label="toFixed(compressor.ratio || 0) + ':1'"
+              :min="1"
+              :max="20"
+              :disabled="!compEnabled"
+              @change="ratioDialHandler"
+            />
+          </div>
+          <div class="col align-center dial-wrapper dial-section">
+            <div class="dial-label mt2">Attack</div>
+            <Dial
+              :size="dialSize"
+              :value="compressor.attack"
+              :min="0"
+              :max="1"
+              :disabled="!compEnabled"
+              :wheel-sensitivity="settings.sensitivity"
+              @change="attackDialHandler"
+            />
+            <NumberEditLabel
+              :value="compressor.attack"
+              :label="toFixed(compressor.attack || 0) + ' s'"
+              :min="0"
+              :max="1"
+              :disabled="!compEnabled"
+              @change="attackDialHandler"
+            />
+          </div>
+          <div class="col align-center dial-wrapper dial-section">
+            <div class="dial-label mt2">Release</div>
+            <Dial
+              :size="dialSize"
+              :value="compressor.release"
+              :min="0.01"
+              :max="1"
+              :disabled="!compEnabled"
+              :wheel-sensitivity="settings.sensitivity"
+              @change="releaseDialHandler"
+            />
+            <NumberEditLabel
+              :value="compressor.release"
+              :label="toFixed(compressor.release || 0) + ' s'"
+              :min="0.01"
+              :max="1"
+              :disabled="!compEnabled"
+              @change="releaseDialHandler"
+            />
+          </div>
+          <div class="col align-center dial-wrapper dial-section">
+            <div class="dial-label">Gain</div>
+              <div
+                @click="!eqEnabled ? $noOp : compGainDialHandler(0.0)"
+                class="zeroer"
+                :class="{disabled: !compEnabled}"
+              >
+                <i class="eq8 arrow_drop_down zeroer"></i>
+              </div>
+            <Dial
+              :size="dialSize"
+              :value="compressor.gain"
+              :min="-20"
+              :max="20"
+              :disabled="!compEnabled"
+              :wheel-sensitivity="settings.sensitivity"
+              @change="compGainDialHandler"
+            />
+            <NumberEditLabel
+              :value="compressor.gain"
+              :label="toFixed(compressor.gain || 0) + ' dB'"
+              :min="-20"
+              :max="20"
+              :disabled="!compEnabled"
+              @change="compGainDialHandler"
+            />
+          </div>
+          <div class="col align-center justify-center">
+            <div class="master-enable" @click="toggleCompressorEnabled" title="Enable/Disable">
+              <i class="eq8 power_settings_new" :class="{ enabled: compEnabled }"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
     <SettingsModal v-if="settingsOpen" @close="settingsOpen = false" v-model="settingsValue" />
     <PresetsModal v-if="presetsOpen" @close="presetsOpen = false" v-model="presetsValue" @delete="deletePreset" @load="loadPreset" />
     <SavePresetModal v-if="savePresetOpen" @close="savePresetOpen = false" :img="presetImage" @save="savePreset" />
@@ -161,14 +282,14 @@
 </template>
 
 <script>
-import Dial from './components/Dial';
-import Choose from './components/Choose';
-import NumberEditLabel from './components/NumberEditLabel';
 import Checkbox from './components/Checkbox';
+import Choose from './components/Choose';
+import Dial from './components/Dial';
 import FrequencyResponsePlot from './components/FrequencyResponsePlot';
-import SettingsModal from './components/SettingsModal';
+import NumberEditLabel from './components/NumberEditLabel';
 import PresetsModal from './components/PresetsModal';
 import SavePresetModal from './components/SavePresetModal';
+import SettingsModal from './components/SettingsModal';
 
 const WebAudioContext = (window.AudioContext || window.webkitAudioContext);
 
@@ -181,7 +302,9 @@ const opts = [
   { iconClass: ['eq8', 'lowpass'], value: 'lowpass', title: 'Low Pass', qEnabled: false, gainEnabled: false }
 ];
 
-const port = browser.runtime.connect({ name: 'eq8' });
+const port = browser.runtime.connect({ name: 'eq8comp' });
+let compressorVisualizerStarted = false;
+let gainReductionLevel = 0.0;
 
 export default {
   name: 'app',
@@ -198,12 +321,14 @@ export default {
   data () {
     return {
       eqEnabled: true,
+      compEnabled: true,
       dialSize: 55,
       filterOptions: opts,
       freqStart: 10.0,
       preampMultiplier: 1.0,
       selectedFilter: null,
       frAudioContext: new WebAudioContext(),
+      compressor: {},
       frFilters: [],
       settings: {},
       presets: {},
@@ -215,21 +340,31 @@ export default {
   },
   created () {
     this.$bus.$on('fr-snapshot', snapshot => this.presetImage = snapshot);
-    port.onMessage.addListener(msg => msg.type === 'SET::STATE' ? this.stateUpdateHandler(msg.state) : this.$noOp());
+    port.onMessage.addListener(msg => {
+      if (msg.type === 'SET::STATE') this.stateUpdateHandler(msg.state);
+      else if (msg.type === 'SET::GAIN_REDUCTION') {
+        gainReductionLevel = msg.value;
+        requestAnimationFrame(this.updateReductionLevel);
+      }
+      return this.$noOp();
+    });
     this.$runtime.sendMessage({ type: 'GET::STATE' })
       .then(this.stateUpdateHandler)
       .then(() => this.selectedFilter = this.frFilters[0]);
   },
   methods: {
-    stateUpdateHandler ({ filters, enabled, preampMultiplier, settings, presets }) {
+    stateUpdateHandler ({ compressor, filters, eqEnabled, preampMultiplier, settings, presets }) {
+      this.compressor = compressor;
+      this.compEnabled = compressor.enabled;
       this.frFilters = this.$arrayCopy(filters);
-      this.eqEnabled = enabled;
+      this.eqEnabled = eqEnabled;
       this.preampMultiplier = preampMultiplier;
       this.settings = this.$arrayCopy(settings);
       this.presets = presets;
       if (this.selectedFilter) {
         this.selectedFilter = this.frFilters.find(f => f.id === this.selectedFilter.id && f.enabled);
       }
+      !compressorVisualizerStarted && this.conpressorVisualizer();
     },
     gainDialHandler (value) {
       const newFilter = Object.assign(this.selectedFilter, { gain: value });
@@ -245,6 +380,21 @@ export default {
       const o = Math.log10(this.nyquist / this.freqStart);
       const f = this.nyquist * Math.pow(10, o * (value - 1));
       port.postMessage({ type: 'SET::FILTER', filter: Object.assign(this.selectedFilter, { frequency: f }) });
+    },
+    thresholdDialHandler (value) {
+      port.postMessage({ type: 'SET::COMPRESSOR', compressor: Object.assign(this.compressor, { threshold: value }) });
+    },
+    ratioDialHandler (value) {
+      port.postMessage({ type: 'SET::COMPRESSOR', compressor: Object.assign(this.compressor, { ratio: value }) });
+    },
+    attackDialHandler (value) {
+      port.postMessage({ type: 'SET::COMPRESSOR', compressor: Object.assign(this.compressor, { attack: value }) });
+    },
+    releaseDialHandler (value) {
+      port.postMessage({ type: 'SET::COMPRESSOR', compressor: Object.assign(this.compressor, { release: value }) });
+    },
+    compGainDialHandler (value) {
+      port.postMessage({ type: 'SET::COMPRESSOR', compressor: Object.assign(this.compressor, { gain: value }) });
     },
     changeFilterType (filter, option) {
       const q = option.value.endsWith('pass') ? 0.0 : 1.0;
@@ -285,7 +435,23 @@ export default {
       }
     },
     toggleMasterEnabled () {
-      port.postMessage({ type: 'SET::ENABLED', enabled: !this.eqEnabled });
+      port.postMessage({ type: 'SET::EQ_ENABLED', enabled: !this.eqEnabled });
+    },
+    toggleCompressorEnabled () {
+      port.postMessage({ type: 'SET::COMP_ENABLED', enabled: !this.compEnabled });
+    },
+    conpressorVisualizer () {
+      compressorVisualizerStarted = true;
+      this.outputBar = document.createElement('div');
+      this.outputBar.classList.add('output');
+      document.getElementById('compressor-visualization').appendChild(this.outputBar);
+
+      console.log('eq8popup compressorVisualizer started');
+      this.updateReductionLevel();
+    },
+    updateReductionLevel () {
+      this.outputBar.style.height = `${gainReductionLevel * -6}px`;
+      port.postMessage({ type: 'GET::GAIN_REDUCTION' });
     },
     handleReset () {
       port.postMessage({ type: 'RESET::FILTERS' });
@@ -295,6 +461,7 @@ export default {
         name: presetMeta.name,
         icon: presetMeta.icon,
         image: this.presetImage,
+        compressor: this.compressor,
         filters: this.frFilters,
         preampMultiplier: this.preampMultiplier
       };
@@ -411,6 +578,10 @@ $_align_values: stretch, flex-start, start, self-start, flex-end, end, self-end,
   .align-#{$v} {
     align-items: #{$v};
   }
+}
+
+.justify-right {
+  justify-content: right;
 }
 
 $_spacer_types: margin, padding;
@@ -534,4 +705,29 @@ $_spacer_dirs: top, right, bottom, left;
 .no-select {
   @include no-select;
 }
+
+#compressor-visualization {
+  width: 20px;
+  height: 120px;
+  background-color: $fr-background;
+  border: 1px solid black;
+  border-radius: 3px;
+  margin: auto 2px;
+  position: relative;
+  display: block;
+  overflow: hidden;
+}
+
+#compressor-visualization div {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+#compressor-visualization .output {
+  background-color: #9f311b;
+}
+
 </style>
