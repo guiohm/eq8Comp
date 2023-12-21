@@ -131,6 +131,7 @@
             @click="!eqEnabled ? $noOp : preampDialHandler(0.0)"
             class="zeroer"
             :class="{disabled: !eqEnabled}"
+            title="Click to reset"
           >
             <i class="eq8 arrow_drop_down zeroer"></i>
           </div>
@@ -250,6 +251,7 @@
                 @click="!eqEnabled ? $noOp : compGainDialHandler(0.0)"
                 class="zeroer"
                 :class="{disabled: !compEnabled}"
+                title="Click to reset"
               >
                 <i class="eq8 arrow_drop_down zeroer"></i>
               </div>
