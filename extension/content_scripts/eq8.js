@@ -1,11 +1,16 @@
 (function () {
   class EQ8 {
+    POPUP_COM_RATE = 40; // in ms
+
     constructor () {
       this.WebAudioContext = (window.AudioContext || window.webkitAudioContext);
       this.DOMMutationObserver = (window.MutationObserver || window.webkitMutationObserver);
       this.pipelines = [];
+      this.activePipeline = null;
       this.state = {};
       this.observer = null;
+      this.popupPort = null;
+      this.popUpSendIntervalId = null;
     }
 
     arrangeFilters (pipeline) {
@@ -102,10 +107,6 @@
       if (msg.type === 'SET::STATE') {
         this.state = msg.state;
         this.updatePipelines();
-      } else if (msg.type === 'GET::GAIN_REDUCTION') {
-        if (this.pipelines.length) {
-          browser.runtime.sendMessage({ type: 'SET::GAIN_REDUCTION', value: this.pipelines[0].compressor.reduction });
-        }
       }
     }
 
@@ -154,6 +155,37 @@
       return Math.pow(10, valueInDb / 20);
     }
 
+    setupPopupConnection () {
+      browser.runtime.onConnect.addListener(port => {
+        if (port.name === 'popup') {
+          console.debug('[eq8comp] popup connected');
+          port.onDisconnect.addListener(() => {
+            console.debug('[eq8comp] popup closed');
+            this.popupPort = null;
+            this.popUpSendIntervalId && clearInterval(this.popUpSendIntervalId);
+            this.popUpSendIntervalId = null;
+          });
+          this.popupPort = port;
+          this.sendPopupDataIfNeeded();
+        }
+      });
+    }
+
+    sendPopupDataIfNeeded () {
+      if (!this.popupPort) return;
+      if (!this.pipelines.length) return;
+      if (this.pipelines.length === 1) this.activePipeline = this.pipelines[0];
+
+      // TODO find the correct playing pipeline
+      this.activePipeline = this.pipelines.length && this.pipelines[0];
+      this.popUpSendIntervalId = setInterval(() => this.doSendPopupData(), this.POPUP_COM_RATE);
+    }
+
+    doSendPopupData () {
+      this.popupPort && this.activePipeline && this.state.compressor.enabled &&
+        this.popupPort.postMessage({ type: 'SET::GAIN_REDUCTION', value: this.activePipeline.compressor.reduction });
+    }
+
     attach () {
       const port = browser.runtime.connect({ name: 'eq8comp' });
       const listener = this.onMessage.bind(this);
@@ -165,6 +197,8 @@
         this.observer = new this.DOMMutationObserver(domListener);
         this.observer.observe(document.body, { childList: true, subtree: true });
       });
+
+      this.setupPopupConnection();
     }
   }
 

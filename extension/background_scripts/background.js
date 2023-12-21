@@ -166,9 +166,6 @@ $storage.get([STORAGE_KEY])
         case 'GET::STATE':
           port.postMessage({ type: 'SET::STATE', state });
           break;
-        case 'GET::GAIN_REDUCTION':
-          contentScripts.forEach(p => p.postMessage({ type: 'GET::GAIN_REDUCTION' }));
-          return;
         case 'SET::FILTER':
           const id = msg.filter.id;
           const f = state.filters.find(f => f.id === id);
@@ -229,11 +226,5 @@ $storage.get([STORAGE_KEY])
       });
     });
 
-    browser.runtime.onMessage.addListener(msg => {
-      if (msg.type === 'GET::STATE') {
-        return Promise.resolve(state);
-      }
-      if (msg.type === 'SET::GAIN_REDUCTION') contentScripts.forEach(p => p.postMessage({ type: 'SET::GAIN_REDUCTION', value: msg.value }));
-      return Promise.resolve();
-    });
+    browser.runtime.onMessage.addListener(msg => msg.type === 'GET::STATE' ? Promise.resolve(state) : Promise.resolve());
   });

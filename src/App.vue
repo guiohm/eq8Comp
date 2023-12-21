@@ -309,7 +309,7 @@ const opts = [
   { iconClass: ['eq8', 'lowpass'], value: 'lowpass', title: 'Low Pass', qEnabled: false, gainEnabled: false }
 ];
 
-const port = browser.runtime.connect({ name: 'eq8comp' });
+const port = browser.runtime.connect({ name: 'popup' });
 let compressorVisualizerStarted = false;
 let gainReductionLevel = 0.0;
 
@@ -347,14 +347,7 @@ export default {
   },
   created () {
     this.$bus.$on('fr-snapshot', snapshot => this.presetImage = snapshot);
-    port.onMessage.addListener(msg => {
-      if (msg.type === 'SET::STATE') this.stateUpdateHandler(msg.state);
-      else if (msg.type === 'SET::GAIN_REDUCTION') {
-        gainReductionLevel = msg.value;
-        requestAnimationFrame(this.updateReductionLevel);
-      }
-      return this.$noOp();
-    });
+    port.onMessage.addListener(msg => msg.type === 'SET::STATE' ? this.stateUpdateHandler(msg.state) : this.$noOp());
     this.$runtime.sendMessage({ type: 'GET::STATE' })
       .then(this.stateUpdateHandler)
       .then(() => this.selectedFilter = this.frFilters[0]);
@@ -363,7 +356,6 @@ export default {
     stateUpdateHandler ({ compressor, filters, eqEnabled, preampGain, settings, presets }) {
       this.compressor = compressor;
       this.compEnabled = compressor.enabled;
-      if (this.compEnabled) port.postMessage({ type: 'GET::GAIN_REDUCTION' }); // restarts visualization
       this.frFilters = this.$arrayCopy(filters);
       this.eqEnabled = eqEnabled;
       this.preampGain = preampGain;
@@ -463,7 +455,6 @@ export default {
       for (let db = dbScale + 5; db < 0; db += 5) {
         const dbToY = (canvas.height / dbScale) * db;
         const y = Math.floor(dbToY) + 0.5; // adjustment for crisp lines
-        console.log('y:', y);
         ctx.strokeStyle = colors.graphLine;
         ctx.beginPath();
         ctx.moveTo(0, y);
@@ -473,7 +464,27 @@ export default {
         ctx.strokeText(db.toFixed(0), 4.5, y + 0.5);
       }
 
-      this.updateReductionLevel();
+      function onError (error) {
+        console.debug(`Error: ${error}`);
+      }
+
+      let gettingActive = browser.tabs.query({
+        audible: true,
+        muted: false
+      });
+      gettingActive.then(tabs => {
+        console.debug('tabs:', tabs);
+        if (!tabs.length) {
+          // TODO poll for audible tab
+        }
+        const grPort = browser.tabs.connect(tabs[0].id, { name: 'popup' });
+        console.debug('grPort:', grPort);
+        grPort.onMessage.addListener(msg => {
+          gainReductionLevel = msg.value;
+          requestAnimationFrame(this.updateReductionLevel);
+          return this.$noOp();
+        });
+      }, onError);
     },
     updateReductionLevel () {
       if (!this.compEnabled) {
@@ -481,7 +492,6 @@ export default {
         return;
       }
       this.meterBar.style.height = `${gainReductionLevel * -6}px`;
-      port.postMessage({ type: 'GET::GAIN_REDUCTION' });
     },
     handleReset () {
       port.postMessage({ type: 'RESET::FILTERS' });
