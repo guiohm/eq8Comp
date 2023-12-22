@@ -309,7 +309,7 @@ const opts = [
   { iconClass: ['eq8', 'lowpass'], value: 'lowpass', title: 'Low Pass', qEnabled: false, gainEnabled: false }
 ];
 
-const port = browser.runtime.connect({ name: 'popup' });
+const port = browser.runtime.connect({ name: 'eq8comp' });
 let compressorVisualizerStarted = false;
 let gainReductionLevel = 0.0;
 

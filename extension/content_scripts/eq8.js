@@ -60,12 +60,10 @@
         f.type = type;
         elFilters.push({ filter: f, enabled, id });
       });
-      const preamp = context.createGain();
-      preamp.gain.value = this.multiplierFromGain(preampGain);
+      const preamp = new GainNode(context, { gain: this.multiplierFromGain(preampGain) });
       const compressor = context.createDynamicsCompressor();
       this.updateCompressorNode(context, compressor);
-      const postamp = context.createGain();
-      postamp.gain.value = this.multiplierFromGain(this.state.compressor.gain);
+      const postamp = new GainNode(context, { gain: this.multiplierFromGain(this.state.compressor.gain) });
       const pipeline = { context, source, filters: elFilters, preamp, compressor, postamp, element };
       this.arrangeFilters(pipeline);
       this.pipelines.push(pipeline);
