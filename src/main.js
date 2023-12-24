@@ -4,7 +4,7 @@ import App from './App';
 Vue.config.devtools = false;
 Vue.config.productionTip = false;
 Vue.prototype.$noOp = () => {};
-Vue.prototype.$runtime = browser.runtime;
+Vue.prototype.$runtime = chrome.runtime;
 Vue.prototype.$arrayCopy = arr => JSON.parse(JSON.stringify(arr));
 Vue.prototype.$bus = new Vue();
 

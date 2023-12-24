@@ -1,5 +1,5 @@
-const $storage = browser.storage.local;
-const contentScripts = [];
+const STORAGE_KEY = '::state';
+const $storage = chrome.storage.local;
 
 const defaultCompressor = {
   enabled: true,
@@ -108,14 +108,12 @@ const state = {
 
 const iconSizes = [16, 32, 48, 96, 128];
 const { icons, iconsSelected } = iconSizes.reduce((a, c) => {
-  a.icons[String(c)] = `icons/icon-${c}.png`;
-  a.iconsSelected[String(c)] = `icons/icon-${c}-selected.png`;
+  a.icons[String(c)] = `../icons/icon-${c}.png`;
+  a.iconsSelected[String(c)] = `../icons/icon-${c}-selected.png`;
   return a;
 }, { icons: {}, iconsSelected: {} });
 
-const updateIcon = () => browser.browserAction.setIcon({ path: state.compressor.enabled || state.eqEnabled ? iconsSelected : icons });
-
-const STORAGE_KEY = '::state';
+const updateIcon = () => chrome.action.setIcon({ path: state.compressor.enabled || state.eqEnabled ? iconsSelected : icons });
 
 // noinspection DuplicatedCode
 const throttle = function (func, threshold, context) {
@@ -139,92 +137,87 @@ const throttle = function (func, threshold, context) {
   };
 };
 
+const sendMessageToTabs = function (tabs, msg) {
+  console.debug('sending to tabs', tabs);
+  for (const tab of tabs) {
+    chrome.tabs
+      .sendMessage(tab.id, msg || { type: 'SET::STATE', state })
+      .catch(onError);
+  }
+};
+
 const broadcastMessage = throttle((msg) => $storage.set({ [STORAGE_KEY]: state })
-  .then(() => contentScripts.forEach(p => p.postMessage(msg))), 50);
+  .then(() => chrome.runtime.sendMessage(msg)) // send to popup
+  .then(() => chrome.tabs.query({ audible: true }).then(sendMessageToTabs).catch(onError)), 50);
 
 const broadcastState = () => broadcastMessage({ type: 'SET::STATE', state });
 
 $storage.get([STORAGE_KEY])
   .then(g => g[STORAGE_KEY] ? Promise.resolve(Object.assign(state, g[STORAGE_KEY])) : $storage.set({ [STORAGE_KEY]: state }))
   .catch(() => $storage.set({ [STORAGE_KEY]: state }))
-  .finally(() => {
+  .finally(() => updateIcon());
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  switch (msg.type) {
+  case 'GET::STATE':
+    return sendResponse({ type: 'SET::STATE', state });
+  case 'SET::FILTER':
+    const id = msg.filter.id;
+    const f = state.filters.find(f => f.id === id);
+    f.frequency = msg.filter.frequency;
+    f.gain = msg.filter.gain;
+    f.q = msg.filter.q;
+    f.type = msg.filter.type;
+    f.enabled = msg.filter.enabled;
+    broadcastState();
+    break;
+  case 'SET::COMPRESSOR':
+    state.compressor = msg.compressor;
+    broadcastState();
+    break;
+  case 'SET::COMP_ENABLED':
+    state.compressor.enabled = msg.enabled;
     updateIcon();
+    broadcastState();
+    break;
+  case 'SET::EQ_ENABLED':
+    state.eqEnabled = msg.enabled;
+    updateIcon();
+    broadcastState();
+    break;
+  case 'SET::PREAMP':
+    state.preampGain = msg.preampGain;
+    broadcastState();
+    break;
+  case 'SET::SETTINGS':
+    state.settings = msg.settings;
+    broadcastState();
+    break;
+  case 'RESET::FILTERS':
+    state.filters = copyHack(defaultFilters);
+    state.preampGain = 0.0;
+    broadcastState();
+    break;
+  case 'SAVE::PRESET':
+    const presetId = msg.id || uuid();
+    state.presets[presetId] = msg.preset;
+    broadcastState();
+    break;
+  case 'DELETE::PRESET':
+    delete state.presets[msg.id];
+    broadcastState();
+    break;
+  case 'LOAD::PRESET':
+    const pre = state.presets[msg.id];
+    state.compressor = copyHack(pre.compressor);
+    state.filters = copyHack(pre.filters);
+    state.preampGain = pre.preampGain;
+    broadcastState();
+    break;
+  default:
+    console.error('Unrecognized message: ' + msg);
+    break;
+  }
+});
 
-    browser.runtime.onConnect.addListener(port => {
-      if (port.name === 'eq8comp') {
-        contentScripts.push(port);
-        port.onDisconnect.addListener(() => {
-          const ix = contentScripts.indexOf(port);
-          if (ix > -1) {
-            contentScripts.splice(ix, 1);
-          }
-        });
-      }
-
-      port.onMessage.addListener(msg => {
-        switch (msg.type) {
-        case 'GET::STATE':
-          port.postMessage({ type: 'SET::STATE', state });
-          break;
-        case 'SET::FILTER':
-          const id = msg.filter.id;
-          const f = state.filters.find(f => f.id === id);
-          f.frequency = msg.filter.frequency;
-          f.gain = msg.filter.gain;
-          f.q = msg.filter.q;
-          f.type = msg.filter.type;
-          f.enabled = msg.filter.enabled;
-          broadcastState();
-          break;
-        case 'SET::COMPRESSOR':
-          state.compressor = msg.compressor;
-          broadcastState();
-          break;
-        case 'SET::COMP_ENABLED':
-          state.compressor.enabled = msg.enabled;
-          updateIcon();
-          broadcastState();
-          break;
-        case 'SET::EQ_ENABLED':
-          state.eqEnabled = msg.enabled;
-          updateIcon();
-          broadcastState();
-          break;
-        case 'SET::PREAMP':
-          state.preampGain = msg.preampGain;
-          broadcastState();
-          break;
-        case 'SET::SETTINGS':
-          state.settings = msg.settings;
-          broadcastState();
-          break;
-        case 'RESET::FILTERS':
-          state.filters = copyHack(defaultFilters);
-          state.preampGain = 0.0;
-          broadcastState();
-          break;
-        case 'SAVE::PRESET':
-          const presetId = msg.id || uuid();
-          state.presets[presetId] = msg.preset;
-          broadcastState();
-          break;
-        case 'DELETE::PRESET':
-          delete state.presets[msg.id];
-          broadcastState();
-          break;
-        case 'LOAD::PRESET':
-          const pre = state.presets[msg.id];
-          state.compressor = copyHack(pre.compressor);
-          state.filters = copyHack(pre.filters);
-          state.preampGain = pre.preampGain;
-          broadcastState();
-          break;
-        default:
-          console.error('Unrecognized message: ' + msg);
-          break;
-        }
-      });
-    });
-
-    browser.runtime.onMessage.addListener(msg => msg.type === 'GET::STATE' ? Promise.resolve(state) : Promise.resolve());
-  });
+const onError = (error) => console.error(`Error: ${error}`);

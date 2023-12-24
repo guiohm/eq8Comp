@@ -156,11 +156,20 @@
       </div>
     </div>
     <div class="row justify-right">
-      <div class="col align-center">
-        <!-- <div id="compressor-visualization"></div> -->
-        <div class="meter">
-          <canvas class="canvas-grid"></canvas>
-          <div class="bar"></div>
+      <div class="col">
+        <div class="col align-center">
+          <div class="meter">
+            <canvas class="canvas-grid"></canvas>
+            <canvas class="canvas-meter"></canvas>
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="col align-center">
+          <div class="meter">
+            <canvas class="canvas-grid"></canvas>
+            <div class="reductionBar"></div>
+          </div>
         </div>
       </div>
       <div class="col">
@@ -297,6 +306,7 @@ import PresetsModal from './components/PresetsModal';
 import SavePresetModal from './components/SavePresetModal';
 import SettingsModal from './components/SettingsModal';
 import colors from './styles/_colors.scss';
+import VUMeter from './utils/VUMeter';
 
 const WebAudioContext = (window.AudioContext || window.webkitAudioContext);
 
@@ -309,9 +319,9 @@ const opts = [
   { iconClass: ['eq8', 'lowpass'], value: 'lowpass', title: 'Low Pass', qEnabled: false, gainEnabled: false }
 ];
 
-const port = browser.runtime.connect({ name: 'eq8comp' });
 let compressorVisualizerStarted = false;
 let gainReductionLevel = 0.0;
+let timeDomainData = new Float32Array();
 
 export default {
   name: 'app',
@@ -347,9 +357,12 @@ export default {
   },
   created () {
     this.$bus.$on('fr-snapshot', snapshot => this.presetImage = snapshot);
-    port.onMessage.addListener(msg => msg.type === 'SET::STATE' ? this.stateUpdateHandler(msg.state) : this.$noOp());
+    this.$runtime.onMessage.addListener(msg => {
+      if (msg.type === 'SET::STATE') this.stateUpdateHandler(msg.state);
+      return false;
+    });
     this.$runtime.sendMessage({ type: 'GET::STATE' })
-      .then(this.stateUpdateHandler)
+      .then(msg => this.stateUpdateHandler(msg.state))
       .then(() => this.selectedFilter = this.frFilters[0]);
   },
   methods: {
@@ -368,41 +381,41 @@ export default {
     },
     gainDialHandler (value) {
       const newFilter = Object.assign(this.selectedFilter, { gain: value });
-      port.postMessage({ type: 'SET::FILTER', filter: newFilter });
+      this.$runtime.sendMessage({ type: 'SET::FILTER', filter: newFilter });
     },
     preampDialHandler (value) {
-      port.postMessage({ type: 'SET::PREAMP', preampGain: value });
+      this.$runtime.sendMessage({ type: 'SET::PREAMP', preampGain: value });
     },
     qDialHandler (value) {
-      port.postMessage({ type: 'SET::FILTER', filter: Object.assign(this.selectedFilter, { q: value }) });
+      this.$runtime.sendMessage({ type: 'SET::FILTER', filter: Object.assign(this.selectedFilter, { q: value }) });
     },
     freqDialHandler (value) {
       const o = Math.log10(this.nyquist / this.freqStart);
       const f = this.nyquist * Math.pow(10, o * (value - 1));
-      port.postMessage({ type: 'SET::FILTER', filter: Object.assign(this.selectedFilter, { frequency: f }) });
+      this.$runtime.sendMessage({ type: 'SET::FILTER', filter: Object.assign(this.selectedFilter, { frequency: f }) });
     },
     thresholdDialHandler (value) {
-      port.postMessage({ type: 'SET::COMPRESSOR', compressor: Object.assign(this.compressor, { threshold: value }) });
+      this.$runtime.sendMessage({ type: 'SET::COMPRESSOR', compressor: Object.assign(this.compressor, { threshold: value }) });
     },
     ratioDialHandler (value) {
-      port.postMessage({ type: 'SET::COMPRESSOR', compressor: Object.assign(this.compressor, { ratio: value }) });
+      this.$runtime.sendMessage({ type: 'SET::COMPRESSOR', compressor: Object.assign(this.compressor, { ratio: value }) });
     },
     attackDialHandler (value) {
-      port.postMessage({ type: 'SET::COMPRESSOR', compressor: Object.assign(this.compressor, { attack: value }) });
+      this.$runtime.sendMessage({ type: 'SET::COMPRESSOR', compressor: Object.assign(this.compressor, { attack: value }) });
     },
     releaseDialHandler (value) {
-      port.postMessage({ type: 'SET::COMPRESSOR', compressor: Object.assign(this.compressor, { release: value }) });
+      this.$runtime.sendMessage({ type: 'SET::COMPRESSOR', compressor: Object.assign(this.compressor, { release: value }) });
     },
     compGainDialHandler (value) {
-      port.postMessage({ type: 'SET::COMPRESSOR', compressor: Object.assign(this.compressor, { gain: value }) });
+      this.$runtime.sendMessage({ type: 'SET::COMPRESSOR', compressor: Object.assign(this.compressor, { gain: value }) });
     },
     changeFilterType (filter, option) {
       const q = option.value.endsWith('pass') ? 0.0 : 1.0;
       const gain = 0.0;
-      port.postMessage({ type: 'SET::FILTER', filter: Object.assign(filter, { type: option.value, q, gain }) });
+      this.$runtime.sendMessage({ type: 'SET::FILTER', filter: Object.assign(filter, { type: option.value, q, gain }) });
     },
     freqInputHandler (value) {
-      port.postMessage({ type: 'SET::FILTER', filter: Object.assign(this.selectedFilter, { frequency: value }) });
+      this.$runtime.sendMessage({ type: 'SET::FILTER', filter: Object.assign(this.selectedFilter, { frequency: value }) });
     },
     toFixed (value) {
       return value.toFixed(2);
@@ -425,50 +438,58 @@ export default {
       }
     },
     toggleFilterEnabled (filter) {
-      port.postMessage({ type: 'SET::FILTER', filter: Object.assign(filter, { enabled: !filter.enabled }) });
+      this.$runtime.sendMessage({ type: 'SET::FILTER', filter: Object.assign(filter, { enabled: !filter.enabled }) });
     },
     frFilterChanged (change) {
       const filter = this.frFilters.find(f => f.id === change.id);
       if (filter) {
         delete change.id;
-        port.postMessage({ type: 'SET::FILTER', filter: Object.assign(filter, change) });
+        this.$runtime.sendMessage({ type: 'SET::FILTER', filter: Object.assign(filter, change) });
       }
     },
     toggleMasterEnabled () {
-      port.postMessage({ type: 'SET::EQ_ENABLED', enabled: !this.eqEnabled });
+      this.$runtime.sendMessage({ type: 'SET::EQ_ENABLED', enabled: !this.eqEnabled });
     },
     toggleCompressorEnabled () {
-      port.postMessage({ type: 'SET::COMP_ENABLED', enabled: !this.compEnabled });
+      this.$runtime.sendMessage({ type: 'SET::COMP_ENABLED', enabled: !this.compEnabled });
     },
     conpressorVisualizer () {
       compressorVisualizerStarted = true;
       const meter = document.querySelector('.meter');
-      this.meterBar = document.querySelector('.bar');
+      this.reductionBar = document.querySelector('.reductionBar');
       const canvas = document.querySelector('.canvas-grid');
-      const ctx = canvas.getContext('2d');
+      const canvas2 = document.querySelectorAll('.canvas-grid')[1];
+      const grGridCtx = canvas2.getContext('2d');
+      const VUGridCtx = canvas.getContext('2d');
 
-      canvas.width = meter.offsetWidth;
-      canvas.height = meter.offsetHeight;
+      canvas.width = canvas2.width = meter.offsetWidth;
+      canvas.height = canvas2.height = meter.offsetHeight;
 
-      const dbScale = -25;
-      ctx.font = '8px sans-serif';
-      for (let db = dbScale + 5; db < 0; db += 5) {
-        const dbToY = (canvas.height / dbScale) * db;
-        const y = Math.floor(dbToY) + 0.5; // adjustment for crisp lines
-        ctx.strokeStyle = colors.graphLine;
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(canvas.width, y);
-        ctx.stroke();
-        ctx.strokeStyle = colors.graphText;
-        ctx.strokeText(db.toFixed(0), 4.5, y + 0.5);
+      function drawGrid (canvasCtx, dbScale, interval) {
+        canvasCtx.font = '8px sans-serif';
+        for (let db = dbScale + interval; db < 0; db += interval) {
+          const dbToY = (canvas.height / dbScale) * db;
+          const y = Math.floor(dbToY) + 0.5; // adjustment for crisp lines
+          canvasCtx.strokeStyle = colors.graphLine;
+          canvasCtx.beginPath();
+          canvasCtx.moveTo(0, y);
+          canvasCtx.lineTo(canvas.width, y);
+          canvasCtx.stroke();
+          canvasCtx.strokeStyle = colors.graphText;
+          canvasCtx.strokeText(db.toFixed(0), 4.5, y + 0.5);
+        }
       }
+
+      drawGrid(grGridCtx, -25, 5);
+      drawGrid(VUGridCtx, -60, 10);
+
+      this.VUMeter = new VUMeter('.canvas-meter', -60, 5);
 
       function onError (error) {
         console.debug(`Error: ${error}`);
       }
 
-      let gettingActive = browser.tabs.query({
+      let gettingActive = chrome.tabs.query({
         audible: true,
         muted: false
       });
@@ -476,25 +497,27 @@ export default {
         console.debug('tabs:', tabs);
         if (!tabs.length) {
           // TODO poll for audible tab
+          return;
         }
-        const grPort = browser.tabs.connect(tabs[0].id, { name: 'popup' });
-        console.debug('grPort:', grPort);
-        grPort.onMessage.addListener(msg => {
-          gainReductionLevel = msg.value;
+        const grPort = chrome.tabs.connect(tabs[0].id, { name: 'popup' });
+        grPort.onMessage.addListener(data => {
+          timeDomainData = new Float32Array(data.timeDomainData);
+          gainReductionLevel = data.gainReduction;
           requestAnimationFrame(this.updateReductionLevel);
-          return this.$noOp();
+          return false;
         });
       }, onError);
     },
     updateReductionLevel () {
       if (!this.compEnabled) {
-        this.meterBar.style.height = '0px';
+        this.reductionBar.style.height = '0px';
         return;
       }
-      this.meterBar.style.height = `${gainReductionLevel * -6}px`;
+      this.reductionBar.style.height = gainReductionLevel * -6 + 'px';
+      this.VUMeter.draw(timeDomainData);
     },
     handleReset () {
-      port.postMessage({ type: 'RESET::FILTERS' });
+      this.$runtime.sendMessage({ type: 'RESET::FILTERS' });
     },
     savePreset (presetMeta) {
       const preset = {
@@ -505,15 +528,15 @@ export default {
         filters: this.frFilters,
         preampGain: this.preampGain
       };
-      port.postMessage({ type: 'SAVE::PRESET', preset });
+      this.$runtime.sendMessage({ type: 'SAVE::PRESET', preset });
       this.savePresetOpen = false;
     },
     loadPreset (presetId) {
-      port.postMessage({ type: 'LOAD::PRESET', id: presetId });
+      this.$runtime.sendMessage({ type: 'LOAD::PRESET', id: presetId });
       this.presetsOpen = false;
     },
     deletePreset (presetId) {
-      port.postMessage({ type: 'DELETE::PRESET', id: presetId });
+      this.$runtime.sendMessage({ type: 'DELETE::PRESET', id: presetId });
     }
   },
   computed: {
@@ -547,11 +570,11 @@ export default {
     },
     presetsValue: {
       get () { return this.presets; },
-      set (nv) { console.log('here'); port.postMessage({ type: 'SET::PRESETS', presets: nv }); }
+      set (nv) { console.log('here'); this.$runtime.sendMessage({ type: 'SET::PRESETS', presets: nv }); }
     },
     settingsValue: {
       get () { return this.settings; },
-      set (nv) { console.log(nv); port.postMessage({ type: 'SET::SETTINGS', settings: nv }); }
+      set (nv) { console.log(nv); this.$runtime.sendMessage({ type: 'SET::SETTINGS', settings: nv }); }
     }
   },
   watch: {
@@ -783,12 +806,21 @@ $_spacer_dirs: top, right, bottom, left;
   overflow: hidden;
 }
 
-.bar {
+.reductionBar {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
-  background-color: #9f311b;
+  opacity: 0.5;
+  background-color: #d32b0a;
+}
+
+.canvas-meter {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  border-radius: 5px;
 }
 
 .canvas-grid {
@@ -796,7 +828,6 @@ $_spacer_dirs: top, right, bottom, left;
   top: 0;
   left: 0;
   z-index: 1;
-  // opacity: 0.5;
   border-radius: 5px;
 }
 </style>
