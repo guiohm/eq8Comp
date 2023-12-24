@@ -46,7 +46,7 @@ $thumb-d: 12px;
   width: $track-w;
   height: $track-h;
   background: #ccc;
-  border-radius: $track-h / 2;
+  border-radius: calc($track-h / 2);
 }
 
 @mixin thumb() {

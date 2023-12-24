@@ -12,6 +12,7 @@
       this.popupPort = null;
       this.popUpSendIntervalId = null;
       this.timeDomainData = new Float32Array();
+      this.frequencyData = new Uint8Array();
     }
 
     async attach () {
@@ -32,12 +33,12 @@
       if (eqAndPreampEnabled) {
         enabledFilters.forEach((f, ix, arr) => {
           if (ix > 0) enabledFilters[ix - 1].filter.connect(f.filter);
-          if (ix === arr.length - 1) f.filter.connect(this.state.compressor.enabled ? compressor : context.destination);
+          if (ix === arr.length - 1) f.filter.connect(this.state.compressor.enabled ? compressor : analyser);
         });
         source.connect(preamp).connect(enabledFilters[0].filter);
       }
       if (this.state.compressor.enabled) {
-        compressor.connect(postamp).connect(analyser).connect(context.destination);
+        compressor.connect(postamp).connect(analyser);
         if (!eqAndPreampEnabled && !preampNoEqEnabled) {
           source.connect(compressor);
         } else if (preampNoEqEnabled) { // Eq ON but no filters -> preamp still active
@@ -46,10 +47,11 @@
       }
       // only preamp
       if (!this.state.compressor.enabled && preampNoEqEnabled) {
-        source.connect(preamp).connect(context.destination);
+        source.connect(preamp).connect(analyser);
       } else if (!this.state.compressor.enabled && !eqAndPreampEnabled) { // everything off
-        source.connect(context.destination);
+        source.connect(analyser);
       }
+      analyser.connect(context.destination);
     }
 
     createPipelineForElement (element) {
@@ -70,8 +72,9 @@
       const compressor = context.createDynamicsCompressor();
       this.updateCompressorNode(context, compressor);
       const postamp = new GainNode(context, { gain: this.multiplierFromGain(this.state.compressor.gain) });
-      const analyser = context.createAnalyser();
+      const analyser = new AnalyserNode(context, { fftSize: 16384, smoothingTimeConstant: 0.8, minDecibels: -90, maxDecibels: -10 });
       this.timeDomainData = new Float32Array(analyser.frequencyBinCount);
+      this.frequencyData = new Uint8Array(analyser.frequencyBinCount);
       const pipeline = { context, source, filters: elFilters, preamp, compressor, postamp, analyser, element };
       this.pipelines.push(pipeline);
     }
@@ -171,10 +174,12 @@
 
     doSendPopupData () {
       this.activePipeline.analyser.getFloatTimeDomainData(this.timeDomainData);
-      this.popupPort && this.activePipeline && this.state.compressor.enabled &&
+      this.activePipeline.analyser.getByteFrequencyData(this.frequencyData);
+      this.popupPort && this.activePipeline &&
         this.popupPort.postMessage({
-          gainReduction: this.activePipeline.compressor.reduction,
-          timeDomainData: Array.apply([], this.timeDomainData)
+          gainReduction: this.state.compressor.enabled ? this.activePipeline.compressor.reduction : 0.0,
+          timeDomainData: Array.apply([], this.timeDomainData),
+          frequencyData: Array.apply([], this.frequencyData)
         });
     }
 

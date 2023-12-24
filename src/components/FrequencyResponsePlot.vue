@@ -1,5 +1,6 @@
 <template>
   <div class="canvas-wrapper" style="width: 600px; height: 250px;">
+    <canvas ref="vis" id="fftvis" width="600px" height="250px"></canvas>
     <canvas ref="grid" id="grid" width="600px" height="250px"></canvas>
     <canvas ref="graph" id="graph" width="600px" height="250px" @mouseup="mouseup" @mousedown="mousedown"></canvas>
   </div>
@@ -279,6 +280,7 @@ export default {
   position: relative;
   margin: 2px;
 
+  #vis,
   #grid,
   #graph {
     position: absolute;
@@ -287,10 +289,11 @@ export default {
     border-radius: 8px;
   }
 
-  #grid {
+  #vis {
     background: $fr-background;
   }
 
+  #grid,
   #graph {
     background: transparent;
   }

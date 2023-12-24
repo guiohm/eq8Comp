@@ -306,6 +306,7 @@ import PresetsModal from './components/PresetsModal';
 import SavePresetModal from './components/SavePresetModal';
 import SettingsModal from './components/SettingsModal';
 import colors from './styles/_colors.scss';
+import FFTVis from './utils/FFTVis';
 import VUMeter from './utils/VUMeter';
 
 const WebAudioContext = (window.AudioContext || window.webkitAudioContext);
@@ -319,9 +320,10 @@ const opts = [
   { iconClass: ['eq8', 'lowpass'], value: 'lowpass', title: 'Low Pass', qEnabled: false, gainEnabled: false }
 ];
 
-let compressorVisualizerStarted = false;
+let visualizersInitialized = false;
 let gainReductionLevel = 0.0;
 let timeDomainData = new Float32Array();
+let frequencyData = new Uint8Array();
 
 export default {
   name: 'app',
@@ -377,7 +379,7 @@ export default {
       if (this.selectedFilter) {
         this.selectedFilter = this.frFilters.find(f => f.id === this.selectedFilter.id && f.enabled);
       }
-      !compressorVisualizerStarted && this.conpressorVisualizer();
+      !visualizersInitialized && this.visualizers();
     },
     gainDialHandler (value) {
       const newFilter = Object.assign(this.selectedFilter, { gain: value });
@@ -453,8 +455,8 @@ export default {
     toggleCompressorEnabled () {
       this.$runtime.sendMessage({ type: 'SET::COMP_ENABLED', enabled: !this.compEnabled });
     },
-    conpressorVisualizer () {
-      compressorVisualizerStarted = true;
+    visualizers () {
+      visualizersInitialized = true;
       const meter = document.querySelector('.meter');
       this.reductionBar = document.querySelector('.reductionBar');
       const canvas = document.querySelector('.canvas-grid');
@@ -483,38 +485,31 @@ export default {
       drawGrid(grGridCtx, -25, 5);
       drawGrid(VUGridCtx, -60, 10);
 
-      this.VUMeter = new VUMeter('.canvas-meter', -60, 5);
+      this.VUMeter = new VUMeter('.canvas-meter', -60, 15, 7);
+      const fftSize = 16384; // same as audioAnalyserNode in EQ8Comp.js
+      const fftCanvas = document.querySelector('#fftvis');
+      this.FFTVis = new FFTVis(this.frAudioContext.sampleRate, fftSize, fftCanvas);
 
-      function onError (error) {
-        console.debug(`Error: ${error}`);
-      }
-
-      let gettingActive = chrome.tabs.query({
-        audible: true,
-        muted: false
-      });
-      gettingActive.then(tabs => {
+      chrome.tabs.query({ audible: true, muted: false }).then(tabs => {
         console.debug('tabs:', tabs);
         if (!tabs.length) {
-          // TODO poll for audible tab
+          // TODO poll for audible tab?
           return;
         }
-        const grPort = chrome.tabs.connect(tabs[0].id, { name: 'popup' });
-        grPort.onMessage.addListener(data => {
-          timeDomainData = new Float32Array(data.timeDomainData);
-          gainReductionLevel = data.gainReduction;
-          requestAnimationFrame(this.updateReductionLevel);
-          return false;
-        });
-      }, onError);
+        chrome.tabs.connect(tabs[0].id, { name: 'popup' })
+          .onMessage.addListener(data => {
+            timeDomainData = new Float32Array(data.timeDomainData);
+            frequencyData = new Uint8Array(data.frequencyData);
+            gainReductionLevel = data.gainReduction;
+            requestAnimationFrame(this.updateReductionLevel);
+            return false;
+          });
+      }, this.onError.bind(this));
     },
     updateReductionLevel () {
-      if (!this.compEnabled) {
-        this.reductionBar.style.height = '0px';
-        return;
-      }
       this.reductionBar.style.height = gainReductionLevel * -6 + 'px';
       this.VUMeter.draw(timeDomainData);
+      this.FFTVis.draw(frequencyData);
     },
     handleReset () {
       this.$runtime.sendMessage({ type: 'RESET::FILTERS' });
@@ -537,6 +532,9 @@ export default {
     },
     deletePreset (presetId) {
       this.$runtime.sendMessage({ type: 'DELETE::PRESET', id: presetId });
+    },
+    onError (error) {
+      console.debug(`Error: ${error}`);
     }
   },
   computed: {
@@ -570,11 +568,11 @@ export default {
     },
     presetsValue: {
       get () { return this.presets; },
-      set (nv) { console.log('here'); this.$runtime.sendMessage({ type: 'SET::PRESETS', presets: nv }); }
+      set (nv) { this.$runtime.sendMessage({ type: 'SET::PRESETS', presets: nv }); }
     },
     settingsValue: {
       get () { return this.settings; },
-      set (nv) { console.log(nv); this.$runtime.sendMessage({ type: 'SET::SETTINGS', settings: nv }); }
+      set (nv) { this.$runtime.sendMessage({ type: 'SET::SETTINGS', settings: nv }); }
     }
   },
   watch: {

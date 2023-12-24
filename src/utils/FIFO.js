@@ -61,6 +61,14 @@ class FIFO {
   getMinValue () {
     return Math.min(...this.data_);
   }
+
+  /**
+   * Find and return the maximum element in the FIFO.
+   * @returns {Number}
+   */
+  getMaxValue () {
+    return Math.max(...this.data_);
+  }
 }
 
 export default FIFO;

@@ -21,10 +21,10 @@ class VUMeter {
    * visualization is drawn to.
    * @param {Number} minDecibel The minimum lower bound decibel of the
    * visualization.
-   * @param {Number} fifoSize The size of the FIFO queue which
+   * @param {Number} rmsFifoSize The size of the FIFO queue which
    * determines how fast the VUMeter gets updated.
    */
-  constructor (canvasId, minDecibel, fifoSize) {
+  constructor (canvasId, minDecibel, rmsFifoSize, maxFifosize) {
     /** @private @const {!canvas} Selected VUMeter canvas element */
     this.canvas_ = document.querySelector(canvasId);
     /** @private @const {!canvasContext} Canvas context */
@@ -40,7 +40,8 @@ class VUMeter {
     this.minDisplayDecibel_ = Math.abs(minDecibel);
     /** @private @const {!fifo} An instance of FIFO class for caching
      * RMS values and extracting a minimum value over time. */
-    this.fifo_ = new FIFO(fifoSize);
+    this.rmsFifo_ = new FIFO(rmsFifoSize);
+    this.maxFifo_ = new FIFO(maxFifosize);
   }
 
   /**
@@ -52,16 +53,26 @@ class VUMeter {
   draw (inputArray) {
     const rootMeanSquare = this.calculateRMS(inputArray);
     const decibel = 20 * Math.log10(rootMeanSquare);
-    let absDecibel = Math.abs(decibel);
-    this.fifo_.push(absDecibel);
-    let minDecibel = this.fifo_.getMinValue();
-    let meterHeight = minDecibel > this.minDisplayDecibel_
+    const absDecibel = Math.abs(decibel);
+    this.rmsFifo_.push(absDecibel);
+    const minDecibel = this.rmsFifo_.getMinValue();
+    const meterHeight = minDecibel > this.minDisplayDecibel_
       ? this.height_ : minDecibel / this.minDisplayDecibel_ * this.height_;
 
     this.canvasContext_.clearRect(0, 0, this.width_, this.height_);
 
     this.canvasContext_.fillStyle = 'green';
     this.canvasContext_.fillRect(0, meterHeight, this.width_, this.height_ - meterHeight);
+
+    let maxdB = 20 * Math.log10(Math.max(-Math.min.apply(Math, inputArray), Math.max.apply(Math, inputArray)));
+    this.maxFifo_.push(maxdB);
+    maxdB = this.maxFifo_.getMaxValue();
+    const maxHeight = -maxdB / this.minDisplayDecibel_ * this.height_;
+
+    if (maxHeight > this.height_) return;
+
+    this.canvasContext_.fillStyle = '#35d835';
+    this.canvasContext_.fillRect(0, maxHeight, this.width_, 2);
   }
 
   /**
