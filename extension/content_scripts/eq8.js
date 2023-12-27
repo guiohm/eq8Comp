@@ -1,4 +1,12 @@
 (function () {
+  window.browser = (function () {
+    return window.msBrowser ||
+      window.browser ||
+      window.chrome;
+  })();
+  // Opera may not support sync
+  const $storage = browser.storage.sync || browser.storage.local;
+
   class EQ8 {
     POPUP_COM_RATE = 20; // in ms
 
@@ -15,9 +23,26 @@
       this.frequencyData = new Uint8Array();
     }
 
+    async loadState () {
+      const items = await $storage.get();
+      this.state = items;
+      return Object.hasOwn(this.state, 'v');
+    }
+
     async attach () {
-      chrome.runtime.onMessage.addListener(this.onMessage.bind(this));
-      await this.updateState();
+      try {
+        if (!await this.loadState()) {
+          throw Error('store empty');
+        }
+      } catch (e) {
+        console.error('Failed to init storage:', e);
+        setTimeout(() => this.attach(), 1000);
+        return;
+      }
+      $storage.onChanged.addListener(async () => {
+        await this.loadState();
+        this.updatePipelines();
+      });
       const domListener = this.throttle(this.onDomMutated.bind(this));
       this.observer = new this.DOMMutationObserver(domListener);
       this.observer.observe(document.body, { childList: true, subtree: true });
@@ -112,7 +137,7 @@
     }
 
     onDomMutated () {
-      let updated = false;
+      // let updated = false;
       const mediaElements = ([...document.body.querySelectorAll('video')])
         .concat([...document.body.querySelectorAll('audio')]);
 
@@ -120,9 +145,9 @@
         .filter(el => !el.eq8Comp)
         .forEach(el => {
           console.log('[eq8Comp]: new audio source discovered');
-          updated = true;
+          // updated = true;
           el.eq8Comp = true;
-          el.addEventListener('playing', () => this.updateState());
+          // el.addEventListener('playing', () => this.updateState());
           this.createPipelineForElement(el);
         });
 
@@ -132,22 +157,23 @@
           this.pipelines.splice(i, 1);
         }
       }
-      if (updated) this.updateState();
+      this.updatePipelines();
+      // if (updated) this.updateState();
     }
 
-    onMessage (msg) {
-      if (msg.type === 'SET::STATE') {
-        this.state = msg.state;
-        this.updatePipelines();
-      }
-    }
+    // onMessage (msg) {
+    //   if (msg.type === 'SET::STATE') {
+    //     this.state = msg.state;
+    //     this.updatePipelines();
+    //   }
+    // }
 
     multiplierFromGain (valueInDb) {
       return Math.pow(10, valueInDb / 20);
     }
 
     setupPopupConnection () {
-      chrome.runtime.onConnect.addListener(port => {
+      browser.runtime.onConnect.addListener(port => {
         if (port.name === 'popup') {
           console.debug('[eq8comp] popup connected');
           port.onDisconnect.addListener(() => {
@@ -204,17 +230,17 @@
       };
     }
 
-    updateState () {
-      return new Promise((resolve) => {
-        chrome.runtime.sendMessage({ type: 'GET::STATE' })
-          .then(resp => {
-            this.state = resp.state;
-            resolve();
-            this.updatePipelines();
-            return false;
-          }).catch(onError);
-      });
-    }
+    // updateState () {
+    //   return new Promise((resolve) => {
+    //     browser.runtime.sendMessage({ type: 'GET::STATE' })
+    //       .then(resp => {
+    //         this.state = resp.state;
+    //         resolve();
+    //         this.updatePipelines();
+    //         return false;
+    //       }).catch(onError);
+    //   });
+    // }
   }
 
   const onError = (error) => console.error(`[eq8comp] Error: ${error}`);

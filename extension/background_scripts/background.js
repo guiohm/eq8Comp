@@ -1,5 +1,8 @@
-const STORAGE_KEY = '::state';
-const $storage = chrome.storage.local;
+const browser = (function () {
+  return chrome || browser;
+})();
+// Opera may not support sync
+const $storage = browser.storage.sync || browser.storage.local;
 
 const defaultCompressor = {
   enabled: true,
@@ -80,12 +83,8 @@ const defaultFilters = [
 
 const copyHack = obj => JSON.parse(JSON.stringify(obj));
 
-// https://gist.github.com/jed/982883
-const uuid = a => a
-  ? (a ^ Math.random() * 16 >> a / 4).toString(16)
-  : ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, uuid);
-
-const state = {
+const defaultState = {
+  v: 1,
   eqEnabled: true,
   compressor: copyHack(defaultCompressor),
   filters: copyHack(defaultFilters),
@@ -113,111 +112,56 @@ const { icons, iconsSelected } = iconSizes.reduce((a, c) => {
   return a;
 }, { icons: {}, iconsSelected: {} });
 
-const updateIcon = () => chrome.action.setIcon({ path: state.compressor.enabled || state.eqEnabled ? iconsSelected : icons });
+// const onError = (error) => console.error(`Error: ${error}`);
+const isCachedStateEmpty = () => !Object.hasOwn(state, 'v');
 
-// noinspection DuplicatedCode
-const throttle = function (func, threshold, context) {
-  if (!threshold || threshold < 0) threshold = 250;
-  let last;
-  let deferred;
-  return function () {
-    const self = context || this;
-    const now = +new Date();
-    const args = arguments;
-    if (last && now < last + threshold) {
-      clearTimeout(deferred);
-      deferred = setTimeout(function () {
-        last = now;
-        func.apply(self, args);
-      }, threshold);
-    } else {
-      last = now;
-      func.apply(self, args);
-    }
-  };
-};
+const state = {};
+const initStorageCache = $storage.get().then((items) => {
+  Object.assign(state, items);
+  if (isCachedStateEmpty()) Object.assign(state, defaultState) && $storage.set(state);
+  updateIcon();
+});
 
-const sendMessageToTabs = function (tabs, msg) {
-  console.debug('sending to tabs', tabs);
-  for (const tab of tabs) {
-    chrome.tabs
-      .sendMessage(tab.id, msg || { type: 'SET::STATE', state })
-      .catch(onError);
+const updateIcon = () => browser.action.setIcon({ path: state.compressor.enabled || state.eqEnabled ? iconsSelected : icons });
+
+$storage.onChanged.addListener(async () => {
+  Object.assign(state, await $storage.get());
+});
+
+browser.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
+  try {
+    // handle waiting when script wake up on event
+    console.debug('msg', msg);
+    if (isCachedStateEmpty()) await initStorageCache;
+  } catch (e) {
+    console.error('Failed to init storage:', e);
   }
-};
 
-const broadcastMessage = throttle((msg) => $storage.set({ [STORAGE_KEY]: state })
-  .then(() => chrome.runtime.sendMessage(msg)) // send to popup
-  .then(() => chrome.tabs.query({ audible: true }).then(sendMessageToTabs).catch(onError)), 50);
-
-const broadcastState = () => broadcastMessage({ type: 'SET::STATE', state });
-
-$storage.get([STORAGE_KEY])
-  .then(g => g[STORAGE_KEY] ? Promise.resolve(Object.assign(state, g[STORAGE_KEY])) : $storage.set({ [STORAGE_KEY]: state }))
-  .catch(() => $storage.set({ [STORAGE_KEY]: state }))
-  .finally(() => updateIcon());
-
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   switch (msg.type) {
-  case 'GET::STATE':
-    return sendResponse({ type: 'SET::STATE', state });
-  case 'SET::FILTER':
-    const id = msg.filter.id;
-    const f = state.filters.find(f => f.id === id);
-    f.frequency = msg.filter.frequency;
-    f.gain = msg.filter.gain;
-    f.q = msg.filter.q;
-    f.type = msg.filter.type;
-    f.enabled = msg.filter.enabled;
-    broadcastState();
-    break;
-  case 'SET::COMPRESSOR':
-    state.compressor = msg.compressor;
-    broadcastState();
-    break;
   case 'SET::COMP_ENABLED':
     state.compressor.enabled = msg.enabled;
     updateIcon();
-    broadcastState();
+    $storage.set(state);
     break;
   case 'SET::EQ_ENABLED':
     state.eqEnabled = msg.enabled;
     updateIcon();
-    broadcastState();
-    break;
-  case 'SET::PREAMP':
-    state.preampGain = msg.preampGain;
-    broadcastState();
-    break;
-  case 'SET::SETTINGS':
-    state.settings = msg.settings;
-    broadcastState();
+    $storage.set(state);
     break;
   case 'RESET::FILTERS':
     state.filters = copyHack(defaultFilters);
     state.preampGain = 0.0;
-    broadcastState();
-    break;
-  case 'SAVE::PRESET':
-    const presetId = msg.id || uuid();
-    state.presets[presetId] = msg.preset;
-    broadcastState();
-    break;
-  case 'DELETE::PRESET':
-    delete state.presets[msg.id];
-    broadcastState();
+    $storage.set(state);
     break;
   case 'LOAD::PRESET':
     const pre = state.presets[msg.id];
     state.compressor = copyHack(pre.compressor);
     state.filters = copyHack(pre.filters);
     state.preampGain = pre.preampGain;
-    broadcastState();
+    $storage.set(state);
     break;
   default:
     console.error('Unrecognized message: ' + msg);
     break;
   }
 });
-
-const onError = (error) => console.error(`Error: ${error}`);
