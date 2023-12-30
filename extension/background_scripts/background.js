@@ -2,7 +2,8 @@ const browser = (function () {
   return chrome || browser;
 })();
 // Opera may not support sync
-const $storage = browser.storage.sync || browser.storage.local;
+const $storageSync = browser.storage.sync || browser.storage.local;
+const $storage = browser.storage.local;
 
 const defaultCompressor = {
   enabled: true,
@@ -92,6 +93,10 @@ const defaultState = {
   settings: {
     sensitivity: 1024
   },
+  currentPreset: {
+    id: null,
+    stale: true
+  },
   presets: {
     'd9c9ad7c-4ba6-4a7d-9f37-2e476fdfafba': {
       name: 'Default',
@@ -112,15 +117,22 @@ const { icons, iconsSelected } = iconSizes.reduce((a, c) => {
   return a;
 }, { icons: {}, iconsSelected: {} });
 
-// const onError = (error) => console.error(`Error: ${error}`);
+const onError = (error) => console.error(`Error: ${error}`);
 const isCachedStateEmpty = () => !Object.hasOwn(state, 'v');
 
 const state = {};
 const initStorageCache = $storage.get().then((items) => {
   Object.assign(state, items);
-  if (isCachedStateEmpty()) Object.assign(state, defaultState) && $storage.set(state);
-  updateIcon();
-});
+  if (isCachedStateEmpty()) {
+    $storageSync.get().then((items) => {
+      Object.assign(state, items);
+      if (isCachedStateEmpty()) Object.assign(state, defaultState) && $storage.set(state);
+      updateIcon();
+    }).catch(onError);
+  } else {
+    updateIcon();
+  }
+}).catch(onError);
 
 const updateIcon = () => browser.action.setIcon({ path: state.compressor.enabled || state.eqEnabled ? iconsSelected : icons });
 
@@ -151,6 +163,7 @@ browser.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
   case 'RESET::FILTERS':
     state.filters = copyHack(defaultFilters);
     state.preampGain = 0.0;
+    state.currentPreset.stale = true;
     $storage.set(state);
     break;
   case 'LOAD::PRESET':
@@ -158,6 +171,8 @@ browser.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
     state.compressor = copyHack(pre.compressor);
     state.filters = copyHack(pre.filters);
     state.preampGain = pre.preampGain;
+    state.currentPreset.id = msg.id;
+    state.currentPreset.stale = false;
     $storage.set(state);
     break;
   default:

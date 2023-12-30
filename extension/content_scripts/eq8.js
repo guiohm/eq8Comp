@@ -4,8 +4,7 @@
       window.browser ||
       window.chrome;
   })();
-  // Opera may not support sync
-  const $storage = browser.storage.sync || browser.storage.local;
+  const $storage = browser.storage.local;
 
   class EQ8 {
     POPUP_COM_RATE = 20; // in ms
@@ -106,7 +105,7 @@
 
     updatePipelines () {
       this.pipelines.forEach((pipeline) => {
-        const { context, source, filters, preamp, compressor, postamp } = pipeline;
+        const { context, source, filters, preamp, compressor, postamp, analyser } = pipeline;
         this.state.filters.forEach(f => {
           const entry = filters.find(i => i.id === f.id);
           const filter = entry.filter;
@@ -124,6 +123,7 @@
         filters.forEach(f => f.filter.disconnect());
         compressor.disconnect();
         postamp.disconnect();
+        analyser.disconnect();
         this.buildAudioGraph(pipeline);
       });
     }
@@ -137,7 +137,6 @@
     }
 
     onDomMutated () {
-      // let updated = false;
       const mediaElements = ([...document.body.querySelectorAll('video')])
         .concat([...document.body.querySelectorAll('audio')]);
 
@@ -145,9 +144,7 @@
         .filter(el => !el.eq8Comp)
         .forEach(el => {
           console.log('[eq8Comp]: new audio source discovered');
-          // updated = true;
           el.eq8Comp = true;
-          // el.addEventListener('playing', () => this.updateState());
           this.createPipelineForElement(el);
         });
 
@@ -158,15 +155,7 @@
         }
       }
       this.updatePipelines();
-      // if (updated) this.updateState();
     }
-
-    // onMessage (msg) {
-    //   if (msg.type === 'SET::STATE') {
-    //     this.state = msg.state;
-    //     this.updatePipelines();
-    //   }
-    // }
 
     multiplierFromGain (valueInDb) {
       return Math.pow(10, valueInDb / 20);
@@ -229,21 +218,8 @@
         }
       };
     }
-
-    // updateState () {
-    //   return new Promise((resolve) => {
-    //     browser.runtime.sendMessage({ type: 'GET::STATE' })
-    //       .then(resp => {
-    //         this.state = resp.state;
-    //         resolve();
-    //         this.updatePipelines();
-    //         return false;
-    //       }).catch(onError);
-    //   });
-    // }
   }
 
-  const onError = (error) => console.error(`[eq8comp] Error: ${error}`);
   const eq8 = new EQ8();
   eq8.attach();
 })();

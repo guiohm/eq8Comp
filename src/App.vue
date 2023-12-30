@@ -308,11 +308,13 @@ import SettingsModal from './components/SettingsModal';
 import colors from './styles/_colors.scss';
 import FFTVis from './utils/FFTVis';
 import VUMeter from './utils/VUMeter';
+import throttle from './utils/throttle';
 
 const WebAudioContext = (window.AudioContext || window.webkitAudioContext);
 window.browser = window.msBrowser || window.browser || window.chrome;
 // Opera may not support sync
-const $storage = browser.storage.sync || browser.storage.local;
+const $storageSync = browser.storage.sync || browser.storage.local;
+const $storage = browser.storage.local;
 
 const opts = [
   { iconClass: ['eq8', 'highpass'], value: 'highpass', title: 'High Pass', qEnabled: false, gainEnabled: false },
@@ -363,13 +365,6 @@ export default {
   },
   created () {
     this.$bus.$on('fr-snapshot', snapshot => this.presetImage = snapshot);
-    // browser.runtime.onMessage.addListener(msg => {
-    //   if (msg.type === 'SET::STATE') this.stateUpdateHandler(msg.state);
-    //   return false;
-    // });
-    // browser.runtime.sendMessage({ type: 'GET::STATE' })
-    //   .then(msg => console.debug(msg) && this.stateUpdateHandler(msg.state))
-    //   .then(() => this.selectedFilter = this.frFilters[0]);
     $storage.get().then(items => this.stateUpdateHandler(items))
       .then(() => this.selectedFilter = this.frFilters[0]);
     $storage.onChanged.addListener(() => $storage.get().then(items => this.stateUpdateHandler(items)));
@@ -388,61 +383,50 @@ export default {
       if (this.selectedFilter) {
         this.selectedFilter = this.frFilters.find(f => f.id === this.selectedFilter.id && f.enabled);
       }
-      !visualizersInitialized && this.visualizers();
+      !visualizersInitialized && this.setupVisualizers();
     },
     gainDialHandler (value) {
       this.updateFilter(this.selectedFilter, { gain: value });
-      // browser.runtime.sendMessage({ type: 'SET::FILTER', filter: newFilter });
     },
     preampDialHandler (value) {
-      // browser.runtime.sendMessage({ type: 'SET::PREAMP', preampGain: value });
       state.preampGain = value;
-      $storage.set(state);
+      throttle($storage.set(state));
     },
     qDialHandler (value) {
       this.updateFilter(this.selectedFilter, { q: value });
-      // browser.runtime.sendMessage({ type: 'SET::FILTER', filter: Object.assign(this.selectedFilter, { q: value }) });
     },
     freqDialHandler (value) {
       const o = Math.log10(this.nyquist / this.freqStart);
       const f = this.nyquist * Math.pow(10, o * (value - 1));
       this.updateFilter(this.selectedFilter, { frequency: f });
-      // browser.runtime.sendMessage({ type: 'SET::FILTER', filter: Object.assign(this.selectedFilter, { frequency: f }) });
     },
     thresholdDialHandler (value) {
       state.compressor.threshold = value;
-      $storage.set(state);
-      // browser.runtime.sendMessage({ type: 'SET::COMPRESSOR', compressor: Object.assign(this.compressor, { threshold: value }) });
+      throttle($storage.set(state));
     },
     ratioDialHandler (value) {
       state.compressor.ratio = value;
-      $storage.set(state);
-      // browser.runtime.sendMessage({ type: 'SET::COMPRESSOR', compressor: Object.assign(this.compressor, { ratio: value }) });
+      throttle($storage.set(state));
     },
     attackDialHandler (value) {
       state.compressor.attack = value;
-      $storage.set(state);
-      // browser.runtime.sendMessage({ type: 'SET::COMPRESSOR', compressor: Object.assign(this.compressor, { attack: value }) });
+      throttle($storage.set(state));
     },
     releaseDialHandler (value) {
       state.compressor.release = value;
-      $storage.set(state);
-      // browser.runtime.sendMessage({ type: 'SET::COMPRESSOR', compressor: Object.assign(this.compressor, { release: value }) });
+      throttle($storage.set(state));
     },
     compGainDialHandler (value) {
       state.compressor.gain = value;
-      $storage.set(state);
-      // browser.runtime.sendMessage({ type: 'SET::COMPRESSOR', compressor: Object.assign(this.compressor, { gain: value }) });
+      throttle($storage.set(state));
     },
     changeFilterType (filter, option) {
       const q = option.value.endsWith('pass') ? 0.0 : 1.0;
       const gain = 0.0;
       this.updateFilter(filter, { type: option.value, q, gain });
-      // browser.runtime.sendMessage({ type: 'SET::FILTER', filter: Object.assign(filter, { type: option.value, q, gain }) });
     },
     freqInputHandler (value) {
       this.updateFilter(this.selectedFilter, { frequency: value });
-      // browser.runtime.sendMessage({ type: 'SET::FILTER', filter: Object.assign(this.selectedFilter, { frequency: value }) });
     },
     updateFilter (filter, prop) {
       Object.assign(filter, prop);
@@ -452,7 +436,7 @@ export default {
       f.q = filter.q;
       f.type = filter.type;
       f.enabled = filter.enabled;
-      $storage.set(state);
+      throttle($storage.set(state));
     },
     toFixed (value) {
       return value.toFixed(2);
@@ -476,14 +460,12 @@ export default {
     },
     toggleFilterEnabled (filter) {
       this.updateFilter(filter, { enabled: !filter.enabled });
-      // browser.runtime.sendMessage({ type: 'SET::FILTER', filter: Object.assign(filter, { enabled: !filter.enabled }) });
     },
     frFilterChanged (change) {
       const filter = this.frFilters.find(f => f.id === change.id);
       if (filter) {
         delete change.id;
         this.updateFilter(filter, change);
-        // browser.runtime.sendMessage({ type: 'SET::FILTER', filter: Object.assign(filter, change) });
       }
     },
     toggleMasterEnabled () {
@@ -492,7 +474,7 @@ export default {
     toggleCompressorEnabled () {
       browser.runtime.sendMessage({ type: 'SET::COMP_ENABLED', enabled: !this.compEnabled });
     },
-    visualizers () {
+    setupVisualizers () {
       visualizersInitialized = true;
       const meter = document.querySelector('.meter');
       this.reductionBar = document.querySelector('.reductionBar');
@@ -538,12 +520,12 @@ export default {
             timeDomainData = new Float32Array(data.timeDomainData);
             frequencyData = new Uint8Array(data.frequencyData);
             gainReductionLevel = data.gainReduction;
-            requestAnimationFrame(this.updateReductionLevel);
+            requestAnimationFrame(this.updateVisualisation);
             return false;
           });
       }, this.onError.bind(this));
     },
-    updateReductionLevel () {
+    updateVisualisation () {
       this.reductionBar.style.height = gainReductionLevel * -6 + 'px';
       this.VUMeter.draw(timeDomainData);
       this.FFTVis.draw(frequencyData);
@@ -561,9 +543,13 @@ export default {
         preampGain: this.preampGain
       };
       const presetId = preset.id || this.uuid();
-      state.presets[presetId] = preset.preset;
-      $storage.set(state);
-      // browser.runtime.sendMessage({ type: 'SAVE::PRESET', preset });
+      state.presets[presetId] = preset;
+      state.currentPreset = {
+        id: presetId,
+        stale: false
+      };
+      throttle($storage.set(state));
+      $storageSync.set(state);
       this.savePresetOpen = false;
     },
     loadPreset (presetId) {
@@ -572,8 +558,7 @@ export default {
     },
     deletePreset (presetId) {
       delete state.presets[presetId];
-      $storage.set(state);
-      // browser.runtime.sendMessage({ type: 'DELETE::PRESET', id: presetId });
+      throttle($storage.set(state));
     },
     onError (error) {
       console.debug(`Error: ${error}`);
@@ -619,7 +604,7 @@ export default {
     },
     settingsValue: {
       get () { return this.settings; },
-      set (settings) { state.settings = settings; $storage.set(state); }
+      set (settings) { state.settings = settings; throttle($storage.set(state)); }
     }
   },
   watch: {

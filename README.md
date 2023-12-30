@@ -1,12 +1,18 @@
-![](https://raw.githubusercontent.com/guiohm/eq8Comp/master/extension/icons/icon-128.png)
+![icon](https://raw.githubusercontent.com/guiohm/eq8Comp/master/extension/icons/icon-128.png)
+![Screenshot](https://raw.githubusercontent.com/guiohm/eq8Comp/master/Screenshot.png)
 
 # eq8comp
 
 _Forked from <https://github.com/pulse0ne/eq8>_
 
-I needed to add a compressor because separate audio extensions cannot share a common media source, so here it is.
+I needed to add a compressor to the original eq8 because separate audio extensions cannot share a common media source, so here it is.
 
-![Screenshot](https://raw.githubusercontent.com/guiohm/eq8Comp/master/Screenshot.png)
+Other changes:
+
+- FFT visualisation
+- upgraded to manifest v3
+- Saved preset are synced so you can retrieve them on other machines or browser instances
+- various other details, see commit logs
 
 ## Original description
 
