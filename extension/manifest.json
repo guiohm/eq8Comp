@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "eq8Comp",
-  "version": "0.0.3",
+  "version": "1.0.0",
   "homepage_url": "https://github.com/guiohm/eq8Comp",
   "description": "HTML5 parametric equalization + dynamic compression",
   "permissions": [
