@@ -83,8 +83,10 @@ export default {
       };
     },
     rotation () {
-      const { min, max } = this;
-      const v = this.value;
+      let { min, max } = this;
+      const v = min > 0 ? this.value - min : this.value;
+      if (min > 0) { max -= min; min = 0; }
+      console.log(min, max, v);
       const p = 264 * ((v + Math.abs(min)) / (max - min));
       return p - 132;
     }
