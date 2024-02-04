@@ -1,9 +1,13 @@
-function writeEq8Log () {
-  // eslint-disable-next-line no-console
-  console.log('%c[eq8comp]%c', 'color:green; font-weight:bold;', '', ...arguments);
-}
-
 (function () {
+  const UNSUPPORTED_HOSTS = ['store.steampowered.com'];
+
+  // Don't run on specified sites due to CORS restriction causing the browser to silence audioElement
+  // TODO Find a way to detect (currently impossible)
+  if (UNSUPPORTED_HOSTS.includes(location.host)) {
+    writeLog('Not initializing. Reason: Steam is unsupported because its CDN does not allow proper CORS rules');
+    return;
+  }
+
   window.browser = (function () {
     return window.msBrowser ||
       window.browser ||
@@ -13,15 +17,8 @@ function writeEq8Log () {
 
   class EQ8 {
     POPUP_COM_RATE = 20; // in ms
-    UNSUPPORTED_HOSTS = ['store.steampowered.com'];
 
     constructor () {
-      // Don't run on specified sites due to CORS restriction causing the browser to silence audioElement
-      // TODO Find a way to detect (currently impossible)
-      if (this.UNSUPPORTED_HOSTS.includes(location.host)) {
-        writeEq8Log('Steam is unsupported because its CDN does not allow proper CORS rules');
-        return;
-      }
       this.WebAudioContext = (window.AudioContext || window.webkitAudioContext);
       this.DOMMutationObserver = (window.MutationObserver || window.webkitMutationObserver);
       this.pipelines = [];
@@ -47,7 +44,7 @@ function writeEq8Log () {
           throw Error('store empty');
         }
       } catch (e) {
-        console.error('Failed to init storage:', e);
+        writeLog('Failed to init storage:', e);
         setTimeout(() => this.attach(), 1000);
         return;
       }
@@ -96,7 +93,7 @@ function writeEq8Log () {
       const context = new this.WebAudioContext();
       if (context.state === 'suspended') {
         this.audioContextSuspended = true;
-        writeEq8Log('browser autoplay prevention -> audioContext suspended');
+        writeLog('browser autoplay prevention -> audioContext suspended');
       }
       const source = context.createMediaElementSource(element);
       const elFilters = [];
@@ -126,7 +123,7 @@ function writeEq8Log () {
         if (context.state === 'suspended') {
           try {
             context.resume().then(() => {
-              writeEq8Log('AudioContext resumed successfully');
+              writeLog('AudioContext resumed successfully');
               this.audioContextSuspended = false;
               this.updatePipelines();
             });
@@ -165,7 +162,7 @@ function writeEq8Log () {
     }
 
     onDomMutated () {
-      writeEq8Log('[eq8Comp]: onDomMutated');
+      writeLog('onDomMutated');
       const mediaElements = ([...document.body.querySelectorAll('video')])
         .concat([...document.body.querySelectorAll('audio')]);
 
@@ -173,15 +170,18 @@ function writeEq8Log () {
       mediaElements
         .filter(el => !el.eq8Comp)
         .forEach(el => {
-          writeEq8Log('[eq8Comp]: new audio source discovered');
+          writeLog('new audio source discovered');
           newPipeline = el.eq8Comp = true;
           el.setAttribute('crossorigin', '');
           this.createPipelineForElement(el);
+          browser.runtime.sendMessage({
+            type: 'PING' // used to wake up service worker which enable updating extension icon after browser restart
+          });
         });
 
       for (let i = this.pipelines.size; i > 0; i--) {
         if (!mediaElements.includes(this.pipelines[i].element)) {
-          writeEq8Log('[eq8Comp]: media element removed');
+          writeLog('media element removed');
           this.pipelines.splice(i, 1);
         }
       }
@@ -195,9 +195,9 @@ function writeEq8Log () {
     setupPopupConnection () {
       browser.runtime.onConnect.addListener(port => {
         if (port.name === 'popup') {
-          writeEq8Log('popup connected');
+          writeLog('popup connected');
           port.onDisconnect.addListener(() => {
-            writeEq8Log('popup closed');
+            writeLog('popup closed');
             this.popupPort = null;
             this.popUpSendIntervalId && clearInterval(this.popUpSendIntervalId);
             this.popUpSendIntervalId = null;
@@ -253,4 +253,9 @@ function writeEq8Log () {
 
   const eq8 = new EQ8();
   eq8.attach();
+
+  function writeLog () {
+    // eslint-disable-next-line no-console
+    console.log('%c[eq8comp]%c', 'color:green; font-weight:bold;', '', ...arguments);
+  }
 })();

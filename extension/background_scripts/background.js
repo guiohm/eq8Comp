@@ -150,6 +150,9 @@ browser.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
   }
 
   switch (msg.type) {
+  case 'PING':
+    // used to wake up service worker which enable updating extension icon after browser restart
+    break;
   case 'SET::COMP_ENABLED':
     state.compressor.enabled = msg.enabled;
     updateIcon();
